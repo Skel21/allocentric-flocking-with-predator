@@ -8,9 +8,7 @@ import json
 import os
 from tqdm import tqdm
 import logging
-#import winsound
 
-#I will play around with this but lets see
 speedAdjustment = 8
 
 class Animal:
@@ -56,9 +54,8 @@ class Animal:
         else:
             return (self.heading+heading)
 
-    def update_brain(self, target_pos: np.ndarray = None, cutoff: float = 0.0, weight: int = 1): # TODO: the weight is not used yet
-        #the weight will be able to be changed. should be included as an input parameter in network function
-        '''Run the network and optionally update target. for the moment this only uses heading, but hopefully when the ring attractor factors in the distance to target, we can also include its distance'''
+    def update_brain(self, target_pos: np.ndarray = None, cutoff: float = 0.0, weight: int = 1): 
+        '''Run the network and optionally update target'''
         targetHeading = self.targetPosToAngle(target_pos)
         if target_pos is not None:
             if np.linalg.norm(target_pos - self.position) < cutoff:
@@ -105,7 +102,7 @@ class GlobalTracker:
         self.cutoff = cutoff
         self.allocentric = allocentric
         self.friendly_weight = friendly_weight
-        self.unfriendly_weight = unfriendly_weight # FOR PREY -1, FOR PREDATORS +1 (so that they swim TOWARDS prey)
+        self.unfriendly_weight = unfriendly_weight # FOR PREY -1 in all our simulations
         self.target_weight = target_weight
 
     def add_animal(self, animal: Animal):
@@ -129,7 +126,7 @@ class GlobalTracker:
         return nearby_positions
 
     #a global step for this class
-    def step_all(self, targetAnimals: list, target_weight: float = None, predatoranimals: dict = {}): #TODO: modify
+    def step_all(self, targetAnimals: list, target_weight: float = None, predatoranimals: dict = {}):
         '''Updates all animals: run brains, save next positinos then replaces old positions with new ones. setting the target weight here does as expected, but can also be set at other places
         '''
         if target_weight is None:
@@ -209,9 +206,6 @@ def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTrac
     if(predators != None):
         for i in range(len(predators.animals)):
             Pred_heading_and_speed.append([])
-        
-    #ok this is really ugly but I think it should work
-    #at the moment I am saving the brain state of the first animal, I hope to be able to expand this later
     
     for t in (tqdm(range(n_ticks)) if progress_bar else range(n_ticks)): # progress bar
         if(predators != None):
@@ -243,11 +237,9 @@ def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTrac
             print("now doing tick number " + str(t) + "")
 
 
-        for aid, animal in preyanimals.animals.items():#Added by Ryo
-            state_list = animal.network.state.tolist()#added by Ryo
-            brain_states_all_animals.append([t, aid] + state_list)#Added by Ryo
-
-        # Save the positions data to CSV
+        for aid, animal in preyanimals.animals.items():
+            state_list = animal.network.state.tolist()
+            brain_states_all_animals.append([t, aid] + state_list)
 
 
     #saving the prey positions to a csv file
@@ -339,7 +331,7 @@ if __name__ == "__main__":
     predSteps = 100
     predToSpawn = 1
     predAllocentric = False
-    predVis = 500 #at the moment setting it this high doesn't make it have any effect
+    predVis = 500 #in our simulations we did not play around with this
     predBeta = 0.05
     hungry_weight = 3
     
@@ -353,7 +345,7 @@ if __name__ == "__main__":
         predators = None
 
 
-    #the filenames (positions being saved in json will be implemented later probably)
+    #the filenames 
     PreyPosFileName = fileNameSystem(animalType="Prey", infotype="P", steps=stepsToRun, beta=Preybeta, allocentric=preyIsAlloC, filetype="csv")
     #PreyPosFileNameJson = fileNameSystem(animalType="Prey", infotype="P", steps=stepsToRun, beta=Preybeta, allocentric=preyIsAlloC, filetype="json")
     PreyHandB = fileNameSystem(animalType="Prey", infotype="H&B", steps=stepsToRun, beta=Preybeta, allocentric=preyIsAlloC, filetype="json")
@@ -365,7 +357,7 @@ if __name__ == "__main__":
     brain_states = run_and_save_simulation_data(animationSteps, targets=targetPosition, preyanimals=preyanimals, predators=predators, filenames=filenames)
     logging.debug("Prey did " + str(animationSteps)+ " ticks with beta of " + str(Preybeta))
     print(targetPosition)
-    #winsound.Beep(2000, 1500) 
+    winsound.Beep(2000, 1500) 
 
     def plot_ring_attractor(state, title="Ring Attractor"):
         """
