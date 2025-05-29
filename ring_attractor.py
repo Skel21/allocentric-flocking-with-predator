@@ -37,27 +37,19 @@ class RingAttractor:
         self.h = np.zeros(params.N)
         self.hb = params.hb
         
-    
     def glauber_step(self):
         '''Update a single random spin of the network
         1) we chose "i" - a random neuron
         2) we calculate dE - the change in energy resulting from hypothetically flipping this one neuron (equation 4 from the paper, optimized to avoid unnecessary calculations)
-        3) we flip the neuron with probability 1/(1 + exp(beta * dE)) (so called Glauber dynamics)
-            I think in the paper they say that they use Glauber dynamics but in reality they use Metropolis algorithm which is actually a little different :/ 
-        In this way, we will slowly approach the lowest energy state of the network.
-        If the energy of new state (flipped spin) is lower, the spin will usually be indeed flipped to lower the energy.
-        If the energy of a newer state is higher, the spin will more often stay the same (non-flipped) to avoid increasing the energy.
-        HOWEVER if beta is low, the spin flips will be more random.
+        3) we flip the neuron with probability 1/(1 + exp(beta * dE))
         '''
         i = np.random.randint(0, self.params.N)
         dE = 2 * (self.h[i] - self.hb) * self.state[i] + 4*self.state[i] * ((self.J[i, :] @ self.state) - self.state[i]) / self.params.N
-        if dE < 0: # if the energy is lower, we flip the spin
-            self.state[i] *= -1
-        elif np.random.rand() < np.exp(-self.params.beta * dE): 
+        if np.random.rand() < 1/(1 + np.exp(self.params.beta * dE)): 
             self.state[i] *= -1
 
     def step(self):
-        '''Update the whole network ones (N spin updates)
+        '''Update the whole network once (N spin updates)
         '''
         for _ in range(self.params.N):
             self.glauber_step()
@@ -74,7 +66,7 @@ class RingAttractor:
     def set_target(self, theta: float, strength: float = 1.0):
         '''Set h field to point towards a given target (with angle theta)
         (equation 2, 3 from the paper)
-        We need to do the weird shit in angles_diff to have correct input in the h. they don't say that in the paper... I can explain it live.
+        The angle difference is modified to work periodically for any angle.
         '''
         angles_diff = (self.angles - theta + 3*np.pi) % (2*np.pi) - np.pi
         self.h += self.params.h0 * strength * np.sqrt(2 * np.pi * self.params.sigma**2) * np.exp(-0.5 * angles_diff**2 / self.params.sigma**2)
@@ -83,11 +75,6 @@ class RingAttractor:
         '''Return the average resulting direction of the network (used for movement later)
         '''
         return self.directions @ self.state / self.params.N
-    
-    def get_energy(self) -> float:
-        '''Just some function to calculate the energy of the network (equation 5 from the paper)
-        '''
-        return -1*((self.h.T - self.hb) @ self.state + (self.state.T @ self.J @ self.state) / self.params.N) # '@' is just matrix multiplication in numpy. '.T' is transposition (flipping of a vector or matrix)
 
 
 def get_connections(angles: np.ndarray, nu: float) -> np.ndarray:

@@ -33,9 +33,13 @@ class Animal:
         self.allocentric = allocentric
         self.stepsToRun = stepsToRun
 
-
-    #this function takes the position of a target an translates it to a heading (depending on if its allocentric or egocentric)
     def targetPosToAngle(self, target: np.ndarray):
+        '''
+        Translates position of the animal to a heading (depending on if its allocentric or egocentric)
+
+        Args:
+            target (np.ndarray): Target position (2D vector).
+        '''
         head2Targetpos = target - self.position
         head2Target = (np.arctan2(head2Targetpos[1], head2Targetpos[0]) + 2*np.pi) % (2*np.pi)
         distanceToTarget = np.linalg.norm(head2Targetpos)
@@ -47,24 +51,34 @@ class Animal:
             logging.debug(f"target angle ego:\t{(head2Target - self.heading)%(2*np.pi)}distance:\t{distanceToTarget}")
             return [(head2Target-self.heading), distanceToTarget]
     
-    #this function takes a heading and translates it to an absolute one
     def headingToAbsolute(self, heading: float):
-        if(self.allocentric):
-            return(heading)
-        else:
-            return (self.heading+heading)
+        '''
+        Translates heading to absolute heading based on allocentric or egocentric coordinates.
+
+        Args:
+            heading (float): Heading angle in radians.
+        '''
+        return (heading) if self.allocentric else (self.heading+heading)% (2*np.pi)
 
     def update_brain(self, target_pos: np.ndarray = None, cutoff: float = 0.0, weight: int = 1): 
-        '''Run the network and optionally update target'''
+        '''
+        Run the network and optionally update target
+        Args:
+            target_pos (np.ndarray): Target position (2D vector).
+            cutoff (float): Distance below which the interaction is repulsive
+            weight (int): Weight of the interaction with the target (h_0 parameter in the paper)
+        '''
         targetHeading = self.targetPosToAngle(target_pos)
         if target_pos is not None:
             if np.linalg.norm(target_pos - self.position) < cutoff:
-                self.network.set_target(targetHeading[0], strength=-1*weight) # negative weight on very short distances
+                self.network.set_target(targetHeading[0], strength=-1*weight)
             else:
                 self.network.set_target(targetHeading[0], strength=weight)
  
     def update_movement(self):
-        '''Adjust heading and speed based on attractor output. This also gets adjusted according to if it is egocentric or allocentric'''
+        '''
+        Adjust heading and speed based on attractor output. This also gets adjusted according to if it is egocentric or allocentric
+        '''
         network_direction = self.network.get_direction() # cartesian coordinates
         norm = np.linalg.norm(network_direction)
         angle = np.arctan2(network_direction[1], network_direction[0])
@@ -74,7 +88,9 @@ class Animal:
             self.speed = norm * speedAdjustment  # or clamp if needed (e.g., min/max speed)
 
     def step(self):
-        '''this makes the network run its steps, then update the heading, speed and position of the agent'''
+        '''
+        this makes the network run its steps, then update the heading, speed and position of the agent
+        '''
         self.network.run(self.stepsToRun)
         self.update_movement()
         dx = self.speed * np.cos(self.heading)
@@ -90,6 +106,7 @@ class Animal:
     
     def get_speed(self):
         return self.speed
+
 
 class GlobalTracker:
     def __init__(self, visibility: float, allocentric: bool, friendly_weight: float = 1.0, unfriendly_weight: float = -1.0, cutoff: float = 0.5, target_weight = 1):
@@ -118,7 +135,9 @@ class GlobalTracker:
             self.newPos[animal_id] = self.animals[animal_id].position.copy()
 
     def get_nearby_positions(self, position: np.ndarray):
-        '''Returns list of positions within radius of a given agents position'''
+        '''
+        Returns list of positions within radius of a given agents position
+        '''
         nearby_positions = []
         for pos in self.positions.values():
             if (np.linalg.norm(pos - position) <= self.visibility and np.linalg.norm(pos - position) > 1e-3):
@@ -127,7 +146,8 @@ class GlobalTracker:
 
     #a global step for this class
     def step_all(self, targetAnimals: list, target_weight: float = None, predatoranimals: dict = {}):
-        '''Updates all animals: run brains, save next positinos then replaces old positions with new ones. setting the target weight here does as expected, but can also be set at other places
+        '''
+        Updates all animals: run brains, save next positinos then replaces old positions with new ones. setting the target weight here does as expected, but can also be set at other places
         '''
         if target_weight is None:
             target_weight = self.target_weight
@@ -155,12 +175,25 @@ class GlobalTracker:
     def get_positions(self):
         return self.positions
 
-
     def __repr__(self):
         return f"AnimalTracker with {len(self.animals)} animals."
 
-#I think the name of the function is self explaining, but this spawns animals with given parameters
+
 def spawnAnimals(stepsToRun: int, animalsToSpawn: int, isallocentric: bool, visibility: float, beta: float, friendly_weight: float = 1.0, unfriendly_weight: float = -1.0, cutoff: float = 0.5, target_weight = 1):
+    '''
+    Spawns animals with given parameters
+
+    Args:
+        stepsToRun (int): Number of steps each animal will run.
+        animalsToSpawn (int): Number of animals to spawn.
+        isallocentric (bool): If True, animals use allocentric coordinates, otherwise egocentric.
+        visibility (float): Distance within which animals interact with each other.
+        beta (float): Beta parameter for all of the attractors.
+        friendly_weight (float): Weight for friendly interactions (h_0 parameter).
+        unfriendly_weight (float): Weight for unfriendly interactions (h_0 parameter for predator-prey).
+        cutoff (float): Distance below which interactions are repulsive.
+        target_weight (int): Weight for interactions with targets (h_0 parameter).
+    '''
     animals = GlobalTracker(visibility=visibility, allocentric=isallocentric, friendly_weight=friendly_weight, unfriendly_weight=unfriendly_weight, cutoff=cutoff, target_weight=target_weight)
     neurons = 100
     for i in range(animalsToSpawn):
@@ -174,13 +207,27 @@ def spawnAnimals(stepsToRun: int, animalsToSpawn: int, isallocentric: bool, visi
         logging.debug(animals.positions[i])
     return animals
 
-#this just spits out structured filenames for the data to be saved
+
 def fileNameSystem(animalType: str, infotype: str, steps: float, beta: float, allocentric: bool, filetype: str):
+    '''
+    Returns a structured filename for saving simulation data.
+    '''
     return f'{animalType}_{infotype}_b={str(beta)}_gStp={str(steps)}_allo={str(allocentric)}.{filetype}'
 
-#this function is where the animation is run with given preyanimals, predators and trackers
-def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTracker, predators: GlobalTracker, filenames:list, subfolder: str = None, progress_bar: bool = False):
 
+def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTracker, predators: GlobalTracker, filenames:list, subfolder: str = None, progress_bar: bool = False):
+    '''
+    Runs the simulation for a given number of ticks and saves the data to files.
+
+    Args:
+        n_ticks (int): Number of ticks to run the simulation.
+        targets (list): List of target positions.
+        preyanimals (GlobalTracker): Tracker for prey animals.
+        predators (GlobalTracker): Tracker for predator animals (can be None).
+        filenames (list): List of filenames for saving data.
+        subfolder (str, optional): Subfolder name for saving data. Defaults to None.
+        progress_bar (bool, optional): If True, shows a progress bar. Defaults to False.
+    '''
     #creates a folder for all the simulation data
     if not subfolder:
         uid = str(int(time.time() * 1000))
@@ -198,7 +245,6 @@ def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTrac
     Pred_positions = []
     Pred_heading_and_speed = []
     brain_states_all_animals = [] #Added by Ryo
-
 
     for i in range(len(preyanimals.animals)):
         Prey_heading_and_speed.append([])
@@ -236,11 +282,9 @@ def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTrac
                 Prey_heading_and_speed[i].append([preyanimals.animals[i].get_heading(), preyanimals.animals[i].get_speed()])
             print("now doing tick number " + str(t) + "")
 
-
         for aid, animal in preyanimals.animals.items():
             state_list = animal.network.state.tolist()
             brain_states_all_animals.append([t, aid] + state_list)
-
 
     #saving the prey positions to a csv file
     PreyPosFile = os.path.join(thisSimulationFolder, filenames[0])
@@ -279,7 +323,6 @@ def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTrac
             file.write(f"\n target position: ")
             file.write(str(element))
             
-
     # Save the heading and speed data to json
     PreyHandBFile = os.path.join(thisSimulationFolder, filenames[1])
     with open(PreyHandBFile, 'w') as f:
@@ -293,7 +336,6 @@ def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTrac
     with open(statesFilepath, 'w') as f2:
         json.dump(serializable_state, f2)
 
-
     # Save all animals' brain states to CSV
     brain_states_file = os.path.join(thisSimulationFolder, 'all_brain_states.csv')
     with open(brain_states_file, 'w', newline='') as f:
@@ -303,7 +345,8 @@ def run_and_save_simulation_data(n_ticks, targets: list, preyanimals: GlobalTrac
         writer.writerows(brain_states_all_animals)
     return brain_states_all_animals
 
-#it starts with the amounts of animals to spawn, which get a random position, random heading and random speed
+
+# EXAMPLE USAGE
 if __name__ == "__main__":
     #the global parameters
     animationSteps = 400
@@ -357,37 +400,30 @@ if __name__ == "__main__":
     brain_states = run_and_save_simulation_data(animationSteps, targets=targetPosition, preyanimals=preyanimals, predators=predators, filenames=filenames)
     logging.debug("Prey did " + str(animationSteps)+ " ticks with beta of " + str(Preybeta))
     print(targetPosition)
-    winsound.Beep(2000, 1500) 
 
     def plot_ring_attractor(state, title="Ring Attractor"):
         """
-        state: list or numpy array of -1 or 1 values
+        Plots the ring attractor state in a circular layout.
+        Args:
+            state: list or numpy array of -1 or 1 values
         """
         n = len(state)
         angles = np.linspace(0, 2*np.pi, n, endpoint=False)
-        
         x = np.cos(angles)
         y = np.sin(angles)
-        
         colors = ['white' if s == 1 else 'black' for s in state]
-        
+    
         fig, ax = plt.subplots(figsize=(5, 5))
         ax.set_aspect('equal')
         ax.set_facecolor('lightgray')  # 背景色
-
-        # show nneurons
         for xi, yi, ci in zip(x, y, colors):
             circle = plt.Circle((xi, yi), 0.05, color=ci, ec='gray')
             ax.add_patch(circle)
-
-        # no axis
         ax.set_xlim(-1.2, 1.2)
         ax.set_ylim(-1.2, 1.2)
         ax.axis('off')
         ax.set_title(title)
         plt.show()
-
-    #plot_ring_attractor(preyanimals.animals[0].network.state, title="Tick 0")
 
 
     def animate_ring_attractor(states, interval=200):
@@ -395,7 +431,6 @@ if __name__ == "__main__":
         states: List of brain states (each state is a list or np.array of -1/1)
         interval: Milliseconds between frames
         """
-
         n = len(states[0])  # the number of neurons
         angles = np.linspace(0, 2*np.pi, n, endpoint=False)
         x = np.cos(angles)
@@ -423,6 +458,3 @@ if __name__ == "__main__":
 
         ani = animation.FuncAnimation(fig, update, frames=len(states), interval=interval, blit=True)
         plt.show()
-
-    #animate_ring_attractor(brain_states)
-
