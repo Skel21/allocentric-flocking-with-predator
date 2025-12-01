@@ -1,18 +1,23 @@
-import numpy as np # useful library for fast math operations and for arrays (vectors and matrices) and operations on them
-import matplotlib.pyplot as plt # nice simple plotting library
-from dataclasses import dataclass # just helper to make code cleaner
+"""
+Ring Attractor Network Implementation
+Based on Salahshour & Couzin (2025) - Allocentric flocking
+"""
+import numpy as np
+from dataclasses import dataclass
 
 
 @dataclass
 class AttractorParams:
-    '''
+    """Parameters for the Ring Attractor Network.
+    
     Attributes:
-        N: int - number of neurons
-        beta: float - inverse temperature
-        nu_exp: float - exponent to_calculate the connection functions
-        h0: float - how strongly the external target influences the network (eq 3 from paper)
-        hb: float - external field (idk what it really does)
-    '''
+        N: Number of neurons in the ring
+        beta: Inverse temperature (controls stochasticity)
+        nu_exp: Exponent for connection function
+        h0: External target influence strength (eq. 3)
+        sigma: Width of the Gaussian field
+        hb: Baseline external field
+    """
     N: int
     beta: float
     nu_exp: float
@@ -22,72 +27,106 @@ class AttractorParams:
 
 
 class RingAttractor:
-    def __init__(self, params: AttractorParams): # function that sets up all the necessary variables when you create a new object (a network for a specific animal for example)
-        '''
-        1) We initialize the state of the network to some random values of +1 and -1
-        2) We initialize direction vectors - each of them points from the center of a circle to one neuron. They are used to calculate the direction of movement.
-        3) We initialize the connections between neurons - the J matrix (N by N).
-        4) We initialize the field h as zero - we don't have any targets to reach yet.
-        '''
+    """Ring Attractor Network for directional decision-making."""
+    
+    def __init__(self, params: AttractorParams):
+        """Initialize the network with given parameters."""
         self.params = params
-        self.state = np.random.randint(0, 1, params.N) * 2 - 1
+        
+        # Initialize random spin states (+1 or -1)
+        self.state = np.random.randint(0, 2, params.N) * 2 - 1
+        
+        # Create direction vectors for each neuron
         self.angles = np.linspace(0, 2 * np.pi, params.N, endpoint=False)
         self.directions = np.array([np.cos(self.angles), np.sin(self.angles)])
-        self.J = get_connections(self.angles, params.nu_exp)
+        
+        # Initialize connection matrix and external field
+        self.J = self._compute_connections(self.angles, params.nu_exp)
         self.h = np.zeros(params.N)
         self.hb = params.hb
         
+    def _compute_connections(self, angles: np.ndarray, nu: float) -> np.ndarray:
+        """Compute connection strengths between neurons (eq. 1).
+        
+        Args:
+            angles: Array of neuron angles
+            nu: Exponent parameter
+            
+        Returns:
+            N×N connection matrix
+        """
+        angle_diff = np.abs(angles[:, np.newaxis] - angles)
+        return np.cos(np.pi * (angle_diff / np.pi) ** nu)
+    
     def glauber_step(self):
-        '''Update a single random spin of the network
-        1) we chose "i" - a random neuron
-        2) we calculate dE - the change in energy resulting from hypothetically flipping this one neuron (equation 4 from the paper, optimized to avoid unnecessary calculations)
-        3) we flip the neuron with probability 1/(1 + exp(beta * dE))
-        '''
+        """Update a single random neuron using Glauber dynamics (eq. 4)."""
         i = np.random.randint(0, self.params.N)
-        dE = 2 * (self.h[i] - self.hb) * self.state[i] + 4*self.state[i] * ((self.J[i, :] @ self.state) - self.state[i]) / self.params.N
-        if np.random.rand() < 1/(1 + np.exp(self.params.beta * dE)): 
+        
+        # Calculate energy change from flipping neuron i
+        interaction_term = 4 * self.state[i] * (
+            (self.J[i, :] @ self.state) - self.state[i]
+        ) / self.params.N
+        field_term = 2 * (self.h[i] - self.hb) * self.state[i]
+        dE = field_term + interaction_term
+        
+        # Flip with temperature-dependent probability
+        flip_prob = 1 / (1 + np.exp(self.params.beta * dE))
+        if np.random.rand() < flip_prob:
             self.state[i] *= -1
-
+    
     def step(self):
-        '''Update the whole network once (N spin updates)
-        '''
+        """Perform one full network update (N neuron updates)."""
         for _ in range(self.params.N):
             self.glauber_step()
-
+    
     def run(self, steps: int):
-        '''Run the network for a given number of steps
-        '''
+        """Run the network for multiple steps.
+        
+        Args:
+            steps: Number of full updates to perform
+        """
         for _ in range(steps):
             self.step()
-
+    
     def reset_target(self):
-        self.h = np.zeros(self.params.N) # reset the target to zero
-
+        """Clear all external field influences."""
+        self.h = np.zeros(self.params.N)
+    
     def set_target(self, theta: float, strength: float = 1.0):
-        '''Set h field to point towards a given target (with angle theta)
-        (equation 2, 3 from the paper)
-        The angle difference is modified to work periodically for any angle.
-        '''
-        angles_diff = (self.angles - theta + 3*np.pi) % (2*np.pi) - np.pi
-        self.h += self.params.h0 * strength * np.sqrt(2 * np.pi * self.params.sigma**2) * np.exp(-0.5 * angles_diff**2 / self.params.sigma**2)
-
+        """Add a directional target influence to the network (eq. 2-3).
+        
+        Args:
+            theta: Target angle in radians
+            strength: Influence strength multiplier
+        """
+        # Compute periodic angle difference
+        angle_diff = (self.angles - theta + 3 * np.pi) % (2 * np.pi) - np.pi
+        
+        # Add Gaussian field centered at target angle
+        gaussian_field = np.exp(-0.5 * angle_diff**2 / self.params.sigma**2)
+        normalization = np.sqrt(2 * np.pi * self.params.sigma**2)
+        self.h += self.params.h0 * strength * normalization * gaussian_field
+    
     def get_direction(self) -> np.ndarray:
-        '''Return the average resulting direction of the network (used for movement later)
-        '''
+        """Compute the network's output direction vector.
+        
+        Returns:
+            2D unit direction vector [x, y]
+        """
         return self.directions @ self.state / self.params.N
 
 
-def get_connections(angles: np.ndarray, nu: float) -> np.ndarray:
-    '''Calculate the connections between neurons (equation 1 from the paper)
-    '''
-    return np.cos(np.pi * (np.abs(angles[:, np.newaxis] - angles) / np.pi)**nu)
-
-
-if __name__ == "__main__": # EXAMPLE OF USAGE
-    basic_params = AttractorParams(N=100, beta=400, nu_exp=1.0, sigma=2*np.pi/100) # we make parameters
-    attractor = RingAttractor(basic_params) # we make the attractor
-    #attractor.run(50)
-    attractor.set_target(0) # we set the target to be at angle 0 (0 degrees, up)
-    attractor.run(200)
-    print(attractor.get_direction()) # direction turns out to be around [0.25, 0.00] so the animal would probably move in a good direction. Success!
-    print((attractor.state))
+# Example usage
+if __name__ == "__main__":
+    # Create network
+    params = AttractorParams(N=100, beta=400, nu_exp=1.0, sigma=2*np.pi/100)
+    network = RingAttractor(params)
+    
+    # Set target and run
+    network.set_target(0)  # Target at 0 radians (pointing right)
+    network.run(200)
+    
+    # Get output
+    direction = network.get_direction()
+    print(f"Output direction: {direction}")
+    print(f"Final state (first 10): {network.state[:10]}")
